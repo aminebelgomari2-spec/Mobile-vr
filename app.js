@@ -5,7 +5,7 @@ const startBtn = document.getElementById('start-btn');
 const joyconBtn = document.getElementById('joycon-btn');
 const video = document.getElementById('webcam');
 
-// --- 1. VR & THREE.JS ---
+// --- 1. RENDERER 3D VR ---
 function initVR() {
   scene = new THREE.Scene();
   camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -15,13 +15,14 @@ function initVR() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   document.getElementById('vr-container').appendChild(renderer.domElement);
 
+  // Vue double écran pour le masque VR
   effect = new THREE.StereoEffect(renderer);
   effect.setSize(window.innerWidth, window.innerHeight);
 
   scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
   scene.add(new THREE.GridHelper(20, 20));
 
-  // 21 points pour le squelette de la main
+  // Création des 21 repères pour la main
   for (let i = 0; i < 21; i++) {
     const joint = new THREE.Mesh(
       new THREE.SphereGeometry(0.02, 8, 8),
@@ -31,7 +32,7 @@ function initVR() {
     scene.add(joint);
   }
 
-  // Orientation du téléphone
+  // Capteur d'orientation de la tête
   window.addEventListener('deviceorientation', (e) => {
     if (!e.alpha) return;
     const alpha = THREE.MathUtils.degToRad(e.alpha);
@@ -48,7 +49,7 @@ function animate() {
   effect.render(scene, camera);
 }
 
-// --- 2. HAND TRACKING ---
+// --- 2. SUIVI DE MAIN (MEDIAPIPE) ---
 function initHandTracking() {
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
@@ -72,20 +73,18 @@ function initHandTracking() {
   cameraUtils.start();
 }
 
-// --- 3. DÉMARRAGE ET FIX CAMÉRA ---
+// --- 3. DÉMARRAGE SÉCURISÉ ---
 startBtn.addEventListener('click', async () => {
   try {
-    // Demande la caméra de manière tolérante
-    const stream = await navigator.mediaDevices.getUserMedia({ 
-      video: { facingMode: { ideal: "environment" } } 
-    });
+    // Utilise exactement la syntaxe simple qui a fonctionné au test
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
     video.srcObject = stream;
     
     document.getElementById('ui').style.display = 'none';
     initVR();
     initHandTracking();
   } catch (err) {
-    alert("Erreur Caméra : Assure-toi qu'aucune autre application n'utilise la caméra et réessaie. (" + err.message + ")");
+    alert("Erreur Caméra : " + err.message);
   }
 });
 
