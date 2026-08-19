@@ -1,90 +1,120 @@
-const startBtn = document.getElementById('start-btn');
-const joyconBtn = document.getElementById('joycon-btn');
-const video = document.getElementById('webcam');
+let scene, camera, renderer, effect;
+let jointSpheres = [];
 
-// Crée un canvas léger pour dessiner les mains
-const canvas = document.createElement('canvas');
-const ctx = canvas.getContext('2d');
-document.getElementById('vr-container').appendChild(canvas);
+const startButton = document.getElementById('startButton');
+const videoElement = document.getElementById('input_video');
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+startButton.addEventListener('click', () => {
+  startButton.style.display = 'none';
+  init3D();
+  initHandTracking();
+});
+
+// 1. Initialisation de la scène VR 3D
+function init3D() {
+  scene = new THREE.Scene();
+  
+  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+  camera.position.set(0, 0, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // Limite la résolution pour éviter les crashs GPU
+  document.getElementById('vr-container').appendChild(renderer.domElement);
+
+  // Effet Stéréoscopique VR (2 écrans)
+  effect = new THREE.StereoEffect(renderer);
+  effect.setSize(window.innerWidth, window.innerHeight);
+
+  // Lumière
+  const light = new THREE.DirectionalLight(0xffffff, 1);
+  light.position.set(0, 1, 2);
+  scene.add(light);
+
+  // Création des 21 repères de la main (sphères légères)
+  const sphereGeo = new THREE.SphereGeometry(0.015, 8, 8);
+  const sphereMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
+
+  for (let i = 0; i < 21; i++) {
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+    sphere.visible = false;
+    scene.add(sphere);
+    jointSpheres.push(sphere);
+  }
+
+  // Écoute de l'orientation du smartphone (Gyroscope)
+  window.addEventListener('deviceorientation', handleOrientation, true);
+  window.addEventListener('resize', onWindowResize);
+
+  animate();
 }
-window.addEventListener('resize', resizeCanvas);
-resizeCanvas();
 
-// Configuration ultra-légère de MediaPipe
+// Controls caméra via Gyroscope
+function handleOrientation(event) {
+  if (!event.alpha) return;
+  const alpha = THREE.MathUtils.degToRad(event.alpha);
+  const beta = THREE.MathUtils.degToRad(event.beta);
+  const gamma = THREE.MathUtils.degToRad(event.gamma);
+  
+  camera.rotation.set(beta, alpha, -gamma, 'YXZ');
+}
+
+// 2. Initialisation du tracking de main avec MediaPipe
 function initHandTracking() {
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
 
+  // Configuration optimisée pour éviter la surchauffe et les crashs
   hands.setOptions({
     maxNumHands: 1,
-    modelComplexity: 0, // 0 = Modèle le plus rapide/léger
+    modelComplexity: 0, // 0 = Modèle ultra-léger pour mobile
     minDetectionConfidence: 0.5,
     minTrackingConfidence: 0.5
   });
 
-  hands.onResults((results) => {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  hands.onResults(onHandResults);
 
-    // Dessine l'image vidéo en fond
-    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-
-    // Dessine les points de la main
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-      const landmarks = results.multiHandLandmarks[0];
-      
-      ctx.fillStyle = '#00FF00';
-      landmarks.forEach((pt) => {
-        const x = pt.x * canvas.width;
-        const y = pt.y * canvas.height;
-        ctx.beginPath();
-        ctx.arc(x, y, 8, 0, 2 * Math.PI);
-        ctx.fill();
-      });
-    }
+  const cameraMediaPipe = new Camera(videoElement, {
+    onFrame: async () => {
+      await hands.send({ image: videoElement });
+    },
+    width: 320,
+    height: 240,
+    facingMode: "environment" // Utilise la caméra arrière
   });
 
-  // Utilise l'API native pour économiser la RAM
-  async function processFrame() {
-    if (video.readyState >= 2) {
-      await hands.send({ image: video });
-    }
-    requestAnimationFrame(processFrame);
-  }
-  
-  processFrame();
+  cameraMediaPipe.start();
 }
 
-// Démarrage
-startBtn.addEventListener('click', async () => {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
-    });
-    video.srcObject = stream;
-    await video.play();
+// Mettre à jour les positions 3D des joints de la main
+function onHandResults(results) {
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    const landmarks = results.multiHandLandmarks[0];
 
-    document.getElementById('ui').style.display = 'none';
-    initHandTracking();
-  } catch (err) {
-    alert("Erreur : " + err.message);
-  }
-});
-
-// Connexion Joy-Con
-joyconBtn.addEventListener('click', async () => {
-  try {
-    const devices = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x057e }] });
-    if (devices.length > 0) {
-      const joycon = devices[0];
-      await joycon.open();
-      alert("Joy-Con connecté : " + joycon.productName);
+    for (let i = 0; i < 21; i++) {
+      const lm = landmarks[i];
+      // Conversion des coordonnées 2D vidéo vers l'espace 3D VR devant la caméra
+      jointSpheres[i].position.set(
+        (lm.x - 0.5) * 2,
+        -(lm.y - 0.5) * 2,
+        -lm.z * 2 - 0.5
+      );
+      jointSpheres[i].visible = true;
     }
-  } catch (err) {
-    alert("Erreur Joy-Con : " + err);
+  } else {
+    jointSpheres.forEach(s => s.visible = false);
   }
-});
+}
+
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  effect.setSize(window.innerWidth, window.innerHeight);
+}
+
+// Boucle de rendu à 60 FPS
+function animate() {
+  requestAnimationFrame(animate);
+  effect.render(scene, camera);
+}
