@@ -2,27 +2,26 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Test Caméra Brut</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Mobile VR & Hand Tracking</title>
+  <link rel="stylesheet" href="style.css">
+
+  <!-- Libs 3D et MediaPipe via CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/effects/StereoEffect.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
 </head>
-<body style="margin:0; background:black; text-align:center;">
+<body>
 
-  <button id="btn" style="padding:20px; font-size:18px; margin:20px;">
-    Lancer la caméra
-  </button>
+  <div id="ui">
+    <button id="start-btn">Démarrer VR & Mains</button>
+    <button id="joycon-btn">Connecter Joy-Con</button>
+  </div>
   
-  <video id="vid" autoplay playsinline style="width:100%; max-height:80vh; background:#222;"></video>
+  <video id="webcam" autoplay playsinline style="display:none;"></video>
+  <div id="vr-container"></div>
 
-  <script>
-    document.getElementById('btn').addEventListener('click', async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        document.getElementById('vid').srcObject = stream;
-      } catch (err) {
-        alert("Erreur brute : " + err.name + " - " + err.message);
-      }
-    });
-  </script>
-
+  <script src="app.js"></script>
 </body>
 </html>
