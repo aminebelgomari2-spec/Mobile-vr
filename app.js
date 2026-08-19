@@ -1,95 +1,81 @@
-let scene, camera, renderer;
-let handJoints = [];
-
 const startBtn = document.getElementById('start-btn');
 const joyconBtn = document.getElementById('joycon-btn');
 const video = document.getElementById('webcam');
 
-// --- 1. RENDERER 3D (ÉCRAN UNIQUE) ---
-function init3D() {
-  scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-  camera.position.set(0, 1.5, 0);
+// Crée un canvas léger pour dessiner les mains
+const canvas = document.createElement('canvas');
+const ctx = canvas.getContext('2d');
+document.getElementById('vr-container').appendChild(canvas);
 
-  // Initialisation du WebGL classique
-  renderer = new THREE.WebGLRenderer({ antialias: false });
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  document.getElementById('vr-container').appendChild(renderer.domElement);
-
-  // Lumière et Grille
-  scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
-  scene.add(new THREE.GridHelper(20, 20));
-
-  // 21 repères verts pour le squelette de la main
-  for (let i = 0; i < 21; i++) {
-    const joint = new THREE.Mesh(
-      new THREE.SphereGeometry(0.03, 8, 8),
-      new THREE.MeshBasicMaterial({ color: 0x00ff00 })
-    );
-    handJoints.push(joint);
-    scene.add(joint);
-  }
-
-  // Redimensionnement automatique si l'écran tourne
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
-
-  animate();
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 }
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
 
-function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
-}
-
-// --- 2. MEDIAPIPE HAND TRACKING ---
+// Configuration ultra-légère de MediaPipe
 function initHandTracking() {
   const hands = new Hands({
     locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
   });
 
-  hands.setOptions({ 
-    maxNumHands: 1, 
-    modelComplexity: 0, // Version légère pour mobile
-    minDetectionConfidence: 0.5 
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 0, // 0 = Modèle le plus rapide/léger
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
   });
 
   hands.onResults((results) => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Dessine l'image vidéo en fond
+    ctx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+
+    // Dessine les points de la main
     if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       const landmarks = results.multiHandLandmarks[0];
-      landmarks.forEach((pt, i) => {
-        handJoints[i].position.set((pt.x - 0.5) * 3, -(pt.y - 0.5) * 3 + 1.5, -pt.z - 1);
+      
+      ctx.fillStyle = '#00FF00';
+      landmarks.forEach((pt) => {
+        const x = pt.x * canvas.width;
+        const y = pt.y * canvas.height;
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, 2 * Math.PI);
+        ctx.fill();
       });
     }
   });
 
-  const cameraUtils = new Camera(video, {
-    onFrame: async () => await hands.send({ image: video }),
-    width: 480, 
-    height: 360
-  });
-  cameraUtils.start();
+  // Utilise l'API native pour économiser la RAM
+  async function processFrame() {
+    if (video.readyState >= 2) {
+      await hands.send({ image: video });
+    }
+    requestAnimationFrame(processFrame);
+  }
+  
+  processFrame();
 }
 
-// --- 3. DÉMARRAGE ---
+// Démarrage
 startBtn.addEventListener('click', async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" }
+    });
     video.srcObject = stream;
-    
+    await video.play();
+
     document.getElementById('ui').style.display = 'none';
-    init3D();
     initHandTracking();
   } catch (err) {
-    alert("Erreur Caméra : " + err.message);
+    alert("Erreur : " + err.message);
   }
 });
 
-// --- 4. JOY-CON ---
+// Connexion Joy-Con
 joyconBtn.addEventListener('click', async () => {
   try {
     const devices = await navigator.hid.requestDevice({ filters: [{ vendorId: 0x057e }] });
